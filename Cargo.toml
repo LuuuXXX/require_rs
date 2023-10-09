@@ -2,7 +2,7 @@
 name = "require_rs"
 version = "0.1.0"
 edition = "2021"
-license = "MIR or Apache-2.0"
+license-file = "LICENSE"
 readme = "README.md"
 repository = "https://github.com/LuuuXXX/require_rs.git"
 description = """
