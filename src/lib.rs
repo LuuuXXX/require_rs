@@ -1,29 +1,30 @@
 mod error;
 mod finder;
+mod version;
 
 use finder::RequiredCommand;
 
 #[macro_export]
 macro_rules! require_cmd {
-    ($cmd:expr) => { // Only binary commands name
-        println!("Executing required_cmd macro");
-        println!("Command: {}", $cmd);
-        require_rs::find($cmd, None);
+    ($bin:expr) => {
+        require_rs::cmd_finder($bin, None, None);
     };
-    ($cmd:expr, $version:expr) => { // Binary commands name and version
-        println!("Executing require_cmd macro");
-        println!("Command: {}", $cmd);
-        if let Some(version) = $version {
-            println!("Version: {}", version);
-            require_rs::find($cmd, Some(version));
-        } else {
-            println!("No version specified");
-            require_rs::find($cmd, None);
-        }
+    ($bin:expr, $version:expr) => {
+        require_rs::cmd_finder($bin, Some($version), None);
+    };
+    ($bin:expr, $version:expr, $version_cmd:expr) => {
+        require_rs::cmd_finder($bin, Some($version), Some($version_cmd));
     };
 }
 
-pub fn find(cmd: String, version: Option<String>) {
-    let rc = RequiredCommand::new(cmd, version);
-    rc.check();
+pub fn cmd_finder(cmd: &str, version: Option<&str>, version_cmd: Option<&str>) {
+    let rc = RequiredCommand::parse(cmd, version, version_cmd);
+    match rc {
+        Ok(rc) => {
+            if let Err(err) = rc.output() {
+                panic!("{:?}", err);
+            };
+        },
+        Err(e) => panic!("{:?}", e),
+    }
 }

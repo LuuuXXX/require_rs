@@ -1,77 +1,81 @@
-use std::ops::Add;
-use std::path::{PathBuf, Path};
-use std::env;
+use std::process::Command;
+
+use crate::error::Error;
+use crate::version::check_version;
 
 #[derive(Debug)]
 pub struct RequiredCommand {
-    pub cmd: String,
+    /// The name of the required command.
+    pub binary: String,
+    /// The version of the required command.
     pub version: Option<String>,
+    /// Way to get the version of the needed binary
+    /// By default this will be ignored. We usually want to 
+    /// get the version by using the `--version` option.
+    pub version_cmd: Option<String>,
 }
-
 
 impl RequiredCommand {
-    pub fn new(cmd: String, version: Option<String>) -> RequiredCommand {
-        let mut command = cmd.clone();
-        let mut binary_name_without_extension = String::new();
+    pub fn parse(
+        binary: &str,
+        version: Option<&str>,
+        version_cmd: Option<&str>,
+    )  -> Result<RequiredCommand, Error> {
+        if binary.is_empty() {
+            return Err(Error::BadBinaryName);
+        }
+        let mut vs: Option<String> = None;
+        if let Some(version) = version {
+            if !version.is_empty() {
+                vs = Some(version.to_owned());
+            }
+        }
+        let mut vc: Option<String> = None;
+        if let Some(version_cmd) = version_cmd {
+            if !version_cmd.is_empty() {
+                vc = Some(version_cmd.to_owned());
+            }
+        }
+        Ok(Self::parser_inner(binary.to_owned(), vs, vc))
+    }
 
-        if let Some(file_name) = Path::new(&cmd).file_stem() {
-            if let Some(file_name) = file_name.to_str() {
-                binary_name_without_extension = file_name.to_string();
+    fn parser_inner(
+        binary: String,
+        version: Option<String>,
+        version_cmd: Option<String>,
+    ) -> RequiredCommand {
+        RequiredCommand { 
+            binary, 
+            version, 
+            version_cmd 
+        }
+    }
+
+    pub fn output(&self) -> Result<(), Error> {
+        self.version_cmd()
+    }
+
+    fn version_cmd(&self) -> Result<(), Error> {
+        let mut cmd = Command::new(&self.binary);
+        if let Some(version_cmd) = &self.version_cmd {
+            cmd.arg(version_cmd); // custom version command
+        } else {
+            cmd.arg("--version");
+        }
+        println!("{:?}", cmd);
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let version = check_version(&stdout, self.version.as_deref());
+                println!("Command output: {:?}", version);
             } else {
-                panic!("Invalid binary name");
-            }
-        }
-
-        if let Some(extension) = Path::new(&cmd).extension() {
-            if extension == "exe" {
-                if env::consts::OS != "windows" {
-                    println!("EXE extension Windows Platform support only");
-                    command = binary_name_without_extension;
-                }
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("Error version command: \n {:?}", stderr);
+                return Err(Error::InvalidBinaryVersionCommand);
             }
         } else {
-            println!("No extension specified");
-            if env::consts::OS == "windows" {
-                println!("EXE extension Windows Platform support only");
-                let tmp_path: String = cmd.clone().add(".exe");
-                command = tmp_path;
-            }
+            return Err(Error::FailedFindBinary);
         }
-        RequiredCommand {
-            cmd: command,
-            version,
-        }
-    }
-
-    pub fn check(&self) {
-        println!("{:?}", self);
-        let vec = self.get_binary_paths();
-        println!("{:?}", vec);
-    }
-
-    fn get_binary_paths(&self) -> Vec<PathBuf> {
-        if let Some(path_env) = env::var_os("PATH") {
-            let paths: Vec<PathBuf> = env::split_paths(&path_env).collect();
-            let binary_paths: Vec<PathBuf> = paths
-                .iter()
-                .map(|path| path.join(self.cmd.clone()))
-                .filter(|path| path.exists() && path.is_file())
-                .collect();
-            binary_paths
-        } else {
-            Vec::new()
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    pub use crate::*;
-
-    #[test]
-    pub fn test_check() {
-        let rc = RequiredCommand::new(String::from("git"), None);
-        rc.check();
+        Ok(())
     }
 }
